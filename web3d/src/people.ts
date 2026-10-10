@@ -30,7 +30,8 @@ export function mat(color: string, rough = 0.85, metal = 0): THREE.MeshStandardM
 const torsoProfile = [
   [0.0, 0.0], [0.155, 0.0], [0.15, 0.06], [0.135, 0.17], [0.15, 0.27], [0.172, 0.36], [0.182, 0.42], [0.165, 0.47], [0.1, 0.505], [0.0, 0.515],
 ].map(([r, y]) => new THREE.Vector2(r, y));
-const skirtProfile = [[0.16, 0.0], [0.2, -0.2], [0.25, -0.42], [0.0, -0.42]].map(([r, y]) => new THREE.Vector2(r, y));
+// Listed bottom-to-top so the lathe's faces point outward (top-to-bottom made the skirt see-through).
+const skirtProfile = [[0.0, -0.42], [0.25, -0.42], [0.2, -0.2], [0.16, 0.0]].map(([r, y]) => new THREE.Vector2(r, y));
 
 const G = {
   torso: new THREE.LatheGeometry(torsoProfile, 20).scale(1, 1, 0.66),
