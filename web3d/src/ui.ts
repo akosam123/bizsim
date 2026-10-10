@@ -200,12 +200,15 @@ export function cardDialogSpec(card: DecisionCard, s: GameState): Pick<DialogSpe
 // ---------------- panels ----------------
 let panelClose: (() => void) | null = null;
 export let panelOpen = false;
+/** true while a panel must be answered (no Close button, Esc does nothing) */
+export let panelLocked = false;
 export function openPanel(title: string, html: string, onClose?: () => void, opts: { noClose?: boolean } = {}) {
   const el = $('panel');
   el.innerHTML = `<header><h2>${esc(title)}</h2>${opts.noClose ? '' : '<button class="x" type="button" id="panelX">Close</button>'}</header><div class="body">${html}</div>`;
   el.hidden = false;
   panelOpen = true;
-  panelClose = () => { el.hidden = true; panelOpen = false; panelClose = null; onClose?.(); };
+  panelLocked = !!opts.noClose;
+  panelClose = () => { el.hidden = true; panelOpen = false; panelLocked = false; panelClose = null; onClose?.(); };
   if (!opts.noClose) $('panelX').addEventListener('click', () => panelClose?.());
   return el;
 }

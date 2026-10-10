@@ -94,7 +94,7 @@ export class World {
   readonly hemi: THREE.HemisphereLight;
   private sky: THREE.Mesh;
   readonly skyMat: THREE.ShaderMaterial;
-  private envMaps: { t: number; tex: THREE.Texture }[] = [];
+  private envMaps: { t: number; tex: THREE.Texture; rt: THREE.WebGLRenderTarget }[] = [];
   private interiorLights: THREE.PointLight[] = [];
   readonly streetLights: THREE.PointLight[] = [];
   readonly bulbMat = new THREE.MeshStandardMaterial({ color: '#fff2d0', emissive: '#ffcc80', emissiveIntensity: 0 });
@@ -176,6 +176,7 @@ export class World {
     this.collider(BOUNDS.x0, BOUNDS.z0 - 1, BOUNDS.x1, BOUNDS.z0);
     this.nav = new NavGrid(BOUNDS.x0, BOUNDS.z0, BOUNDS.x1, BOUNDS.z1, 0.3);
     for (const b of this.colliders) this.nav.addBox(b, 0.3);
+    this.nav.labelAreas();
 
     s.add(this.renoProps);
     // fold static scenery into a few big meshes; keep anything that toggles or gets clicked
@@ -205,10 +206,38 @@ export class World {
       }
       (ground.material as THREE.MeshBasicMaterial).color.set(t > 0.9 ? '#3a3530' : '#6f6a5a');
       const rt = pm.fromScene(envScene, 0.02);
-      this.envMaps.push({ t, tex: rt.texture });
+      this.envMaps.push({ t, tex: rt.texture, rt });
     }
     pm.dispose();
+    dome.geometry.dispose(); skyM.dispose();
+    ground.geometry.dispose(); (ground.material as THREE.Material).dispose();
     this.setTime(this.t);
+  }
+
+  /** Release every GPU resource this world created (geometry, materials,
+   * textures, baked lighting). Shared resources are simply re-uploaded the next
+   * time something uses them. */
+  dispose() {
+    const geos = new Set<THREE.BufferGeometry>();
+    const mats = new Set<THREE.Material>();
+    const texs = new Set<THREE.Texture>();
+    this.scene.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.geometry) geos.add(m.geometry);
+      const list = Array.isArray(m.material) ? m.material : m.material ? [m.material] : [];
+      for (const mm of list) {
+        mats.add(mm);
+        for (const v of Object.values(mm)) if (v && (v as THREE.Texture).isTexture) texs.add(v as THREE.Texture);
+      }
+    });
+    for (const e of this.envMaps) e.rt.dispose();
+    this.sun.shadow.dispose();
+    this.envMaps = [];
+    this.scene.environment = null;
+    geos.forEach((g) => g.dispose());
+    mats.forEach((m) => m.dispose());
+    texs.forEach((t) => t.dispose());
+    this.scene.clear();
   }
 
   // ---------- helpers ----------
@@ -351,17 +380,18 @@ export class World {
 
     // interior partitions
     const pH = 3.2;
-    this.wall(-7, -6, -4.5, -6, pH, paint, [0, 1], 0.16);
-    this.wall(-3, -6, 3.5, -6, pH, paint, [0, 1], 0.16);
+    // kitchen door sits right of the counter so the shelving behind the till never blocks it
+    this.wall(-7, -6, -2.2, -6, pH, paint, [0, 1], 0.16);
+    this.wall(-0.7, -6, 3.5, -6, pH, paint, [0, 1], 0.16);
     this.wall(5, -6, 7, -6, pH, paint, [0, 1], 0.16);
     this.wall(1.5, -13, 1.5, -6, pH, paint, [1, 0], 0.16);
     const headers = new THREE.Group();
     this.scene.add(headers);
-    this.box(1.5, pH - 2.4, 0.16, paint, -3.75, 2.4, -6, headers);
+    this.box(1.5, pH - 2.4, 0.16, paint, -1.45, 2.4, -6, headers);
     this.box(1.5, pH - 2.4, 0.16, paint, 4.25, 2.4, -6, headers);
     const swing = mat('#9aa3aa', 0.35, 0.6);
-    this.box(0.7, 1.3, 0.04, swing, -4.12, 0.5, -6.25, headers).rotation.y = 0.9;
-    this.box(0.7, 1.3, 0.04, swing, -3.38, 0.5, -6.25, headers).rotation.y = -0.9;
+    this.box(0.7, 1.3, 0.04, swing, -1.82, 0.5, -6.25, headers).rotation.y = 0.9;
+    this.box(0.7, 1.3, 0.04, swing, -1.08, 0.5, -6.25, headers).rotation.y = -0.9;
     this.walls.push({ full: headers, px: 0, pz: -6, nx: 0, nz: 1 });
 
     // ceiling (seen from inside in first person; hidden with the roof in the cutaway)
@@ -720,6 +750,17 @@ export class World {
   }
 
   // ---------- dynamic look ----------
+  /** Repaint the sign over your door (the start screen updates it as you type). */
+  setShopName(name: string) {
+    const m = this.userSign;
+    if (!m) return;
+    m.map?.dispose();
+    const t = signTexture(name, this.opts.accent, '#fffaf0', { sub: this.opts.tagline });
+    m.map = t;
+    m.emissiveMap = t;
+    m.needsUpdate = true;
+  }
+
   setRival(name: string | null) {
     const m = this.rivalSign.material as THREE.MeshStandardMaterial;
     m.map?.dispose();

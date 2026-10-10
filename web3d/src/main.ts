@@ -28,8 +28,18 @@ const GFX_KEY = 'bizsim3d.gfx';
 const WALK = 2.2, RUN = 4.8;
 
 // ---------------- renderer, camera, post ----------------
+(window as unknown as { __bizsimBooted?: boolean }).__bizsimBooted = true;
+const failBoot = (msg: string) => (window as unknown as { __bizsimFail?: (m: string) => void }).__bizsimFail?.(msg);
 const canvas = $<HTMLCanvasElement>('view');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+function makeRenderer() {
+  try {
+    return new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+  } catch (e) {
+    failBoot('Your browser couldn\u2019t start 3D graphics. Try another browser, or turn on hardware acceleration in your browser settings.');
+    throw e;
+  }
+}
+const renderer = makeRenderer();
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.6));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -48,8 +58,12 @@ let renderPass: RenderPass | null = null;
 let gtao: GTAOPass | null = null;
 
 function buildComposer() {
-  composer?.dispose();
+  if (composer) {
+    for (const p of composer.passes) (p as unknown as { dispose?: () => void }).dispose?.();
+    composer.dispose();
+  }
   composer = null;
+  gtao = null;
   if (gfx !== 'high' || !world) return;
   const w = canvas.clientWidth || window.innerWidth, h = canvas.clientHeight || window.innerHeight;
   const pr = renderer.getPixelRatio();
@@ -148,7 +162,7 @@ function shopNameFor(business: string, ownerName: string) {
 }
 
 function buildWorld(business: GameState['business'], location: GameState['location'], ownerName: string) {
-  if (world) world.scene.traverse((o) => { const m = o as THREE.Mesh; if (m.geometry) m.geometry.dispose(); });
+  world?.dispose();
   const biz = businessOf(business);
   world = new World({ business, location, accent: biz.accent, shopName: shopNameFor(business, ownerName), tagline: LOCATIONS.find((l) => l.id === location)!.name });
   world.initEnv(renderer);
@@ -183,8 +197,17 @@ function removePerson(p: Person) {
   if (t) { t.remove(); tags.delete(p.id); }
 }
 
+/** A walkable route, or null when there is no way there from here. */
 function path(from: P2, to: P2) {
-  return world!.nav.findPath(from.x, from.z, to.x, to.z) ?? [to];
+  return world!.nav.findPath(from.x, from.z, to.x, to.z);
+}
+/** Send a character somewhere. If there's no route, they simply turn up there
+ * (better than walking through a wall). */
+function npcGo(p: Person, to: P2, onArrive: (() => void) | null = null) {
+  const r = path(p.root.position, to);
+  if (r) { p.walkTo(r, onArrive); return; }
+  p.place(to.x, to.z, p.heading);
+  p.walkTo([], onArrive);
 }
 
 // ---------------- traffic ----------------
@@ -311,7 +334,7 @@ function spawnCustomer() {
     if (qi < 0) { leaveCustomer(c); return; }
     c.q = qi;
     c.stage = 'toQueue';
-    p.walkTo(path(p.root.position, w.queue[qi]), () => { c.stage = 'queue'; c.t = 2.5 + Math.random() * 3; p.faceHeading(Math.PI); });
+    npcGo(p, w.queue[qi], () => { c.stage = 'queue'; c.t = 2.5 + Math.random() * 3; p.faceHeading(Math.PI); });
   });
 }
 function freeQueue() {
@@ -325,7 +348,7 @@ function leaveCustomer(c: Customer) {
   c.p.sitting = false;
   const dir = Math.random() < 0.5 ? 1 : -1;
   const out = world!.door.out;
-  c.p.walkTo([...(insideShop(c.p.x, c.p.z) ? path(c.p.root.position, out) : []), { x: out.x + dir, z: 2.0 }, { x: 32 * dir, z: 2.0 }], () => { c.stage = 'gone'; });
+  c.p.walkTo([...(insideShop(c.p.x, c.p.z) ? path(c.p.root.position, out) ?? [out] : []), { x: out.x + dir, z: 2.0 }, { x: 32 * dir, z: 2.0 }], () => { c.stage = 'gone'; });
 }
 function updateCustomers(dt: number) {
   const w = world!;
@@ -338,7 +361,7 @@ function updateCustomers(dt: number) {
           seat.taken = true;
           c.seat = seat;
           c.stage = 'toSeat';
-          c.p.walkTo(path(c.p.root.position, seat.approach), () => {
+          npcGo(c.p, seat.approach, () => {
             c.p.walkTo([{ x: seat.x, z: seat.z }], () => {
               if (seat.sit) { c.p.sitHeight = seat.y; c.p.sit(seat.h); } else c.p.faceHeading(seat.h);
               c.stage = 'seated';
@@ -463,7 +486,7 @@ function spawnCardCast() {
     const p = npc.p;
     p.sitting = false;
     p.speed = 2.0;
-    p.walkTo(path(p.root.position, sp), () => p.faceHeading(sp.h));
+    npcGo(p, sp, () => p.faceHeading(sp.h));
   });
 }
 
@@ -473,7 +496,7 @@ function releaseNpc(npc: CastNpc) {
   npc.spot = null;
   const h = npc.home;
   if (Math.hypot(p.x - h.x, p.z - h.z) < 0.4) { settle(npc); return; }
-  p.walkTo(path(p.root.position, h), () => settle(npc));
+  npcGo(p, h, () => settle(npc));
 }
 
 // ---------------- month flow ----------------
@@ -536,9 +559,13 @@ function refreshTasks() {
   ui.renderTasks(items, left ? `${left} waiting on you` : 'Ready to close');
 }
 
+function markDone(idx: number) {
+  if (!state || state.completedCards.includes(idx)) return;
+  state = { ...state, completedCards: [...state.completedCards, idx] };
+}
 function finishCard(npc: CastNpc, idx: number) {
   if (!state) return;
-  state = { ...state, completedCards: [...state.completedCards, idx] };
+  markDone(idx);
   npc.cards = npc.cards.filter((c) => c !== idx);
   save();
   if (!npc.cards.length) releaseNpc(npc);
@@ -551,14 +578,19 @@ function playCard(npc: CastNpc) {
   const idx = npc.cards[0];
   const card: DecisionCard = state.currentCards[idx];
   if (!card) return;
+  if (state.completedCards.includes(idx)) { finishCard(npc, idx); return; }
   const spec = ui.cardDialogSpec(card, state);
   startTalk(npc.p);
   ui.openDialog({
     ...spec,
     onLine: (on) => (on ? npc.p.talk() : npc.p.quiet()),
     onPick: (i) => {
+      if (state!.completedCards.includes(idx)) return null; // already decided
       const before = state!;
+      // apply and record in one step, so a reload can never replay this choice
       state = applyOption(state!, card, i);
+      markDone(idx);
+      save();
       const delta = state.cash - before.cash;
       ui.renderHud(state);
       if (delta) ui.toast(`${delta > 0 ? 'Cash in' : 'Spent'} ${ui.money(Math.abs(delta))}`, delta > 0 ? 'good' : '');
@@ -799,7 +831,7 @@ function openAds() {
 let nearest: Inter | null = null;
 function updatePrompt() {
   const el = $<HTMLButtonElement>('prompt');
-  if (!player || ui.dialogOpen || ui.panelOpen || busy || mode !== 'play' || traveling) { el.hidden = true; nearest = null; return; }
+  if (!player || ui.dialogOpen || ui.panelOpen || busy || mode !== 'play' || traveling || closing) { el.hidden = true; nearest = null; return; }
   let best: Inter | null = null;
   let bestScore = Infinity;
   const fx = Math.sin(fpYaw), fz = Math.cos(fpYaw);
@@ -823,12 +855,14 @@ function updatePrompt() {
 }
 
 function goTo(it: Inter) {
-  if (!player || ui.dialogOpen || ui.panelOpen || busy) return;
+  if (!player || ui.dialogOpen || ui.panelOpen || busy || closing || traveling) return;
   if (Math.hypot(player.x - it.x, player.z - it.z) <= it.r * 0.9) { it.run(); return; }
+  const r = path(player.root.position, { x: it.x, z: it.z });
+  if (!r) { ui.toast("You can't get there from here.", 'bad'); return; }
   pending = it;
   const far = Math.hypot(player.x - it.x, player.z - it.z) > 14;
   player.speed = far ? RUN : WALK;
-  player.walkTo(path(player.root.position, { x: it.x, z: it.z }));
+  player.walkTo(r);
 }
 
 /** Walk to someone nearby; jump straight to them if they are across the map. */
@@ -997,11 +1031,32 @@ function setView(v: 'third' | 'first') {
   $('crosshair').hidden = v !== 'first' || mode !== 'play';
   $('btnView').textContent = v === 'first' ? '3rd person' : '1st person';
   $('btnView').setAttribute('aria-pressed', String(v === 'first'));
+  updateLockHint();
   if (world) world.setTime(tod);
   resize();
 }
 function exitPointerLock() { if (document.pointerLockElement) document.exitPointerLock?.(); }
-document.addEventListener('pointerlockchange', () => { $('lockHint').hidden = !(view === 'first' && mode === 'play' && !document.pointerLockElement && !touchy); });
+// Mouse capture can be refused (some embedded frames block it). Then first person
+// falls back to drag-to-look and normal clicking.
+let lockBlocked = false;
+function updateLockHint() {
+  $('lockHint').hidden = !(view === 'first' && mode === 'play' && !document.pointerLockElement && !touchy && !lockBlocked);
+}
+function lockFailed() {
+  if (!lockBlocked) ui.toast('Mouse capture is blocked here. Drag to look around and click to use things.');
+  lockBlocked = true;
+  updateLockHint();
+}
+function tryLock() {
+  try {
+    const r = canvas.requestPointerLock?.() as unknown as Promise<void> | undefined;
+    if (r && typeof r.catch === 'function') r.catch(lockFailed);
+  } catch {
+    lockFailed();
+  }
+}
+document.addEventListener('pointerlockchange', updateLockHint);
+document.addEventListener('pointerlockerror', lockFailed);
 
 // ---------------- input ----------------
 const keys = new Set<string>();
@@ -1009,8 +1064,9 @@ window.addEventListener('keydown', (e) => {
   if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
   const k = e.key.toLowerCase();
   if (k === 'shift') keys.add('shift');
+  if (closing || traveling) { if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' ', 'e', 'enter'].includes(k)) e.preventDefault(); return; }
   if (mode === 'play' && !ui.dialogOpen) {
-    if (k === 'escape' && (ui.panelOpen || ui.mapOpen)) { e.preventDefault(); ui.closePanel(); ui.closeMap(); return; }
+    if (k === 'escape' && ((ui.panelOpen && !ui.panelLocked) || ui.mapOpen)) { e.preventDefault(); if (!ui.panelLocked) ui.closePanel(); ui.closeMap(); return; }
     if (ui.panelOpen || ui.mapOpen) { if (k === 'm' && ui.mapOpen) ui.closeMap(); return; }
     if ((k === 'e' || k === 'enter' || k === ' ') && nearest) { e.preventDefault(); nearest.run(); return; }
     if (k === 'b') { openBooks(); return; }
@@ -1071,8 +1127,8 @@ canvas.addEventListener('pointerup', (e) => {
   pointers.delete(e.pointerId);
   if (pointers.size < 2) pinch0 = 0;
   if (!p || dragged || mode !== 'play' || e.button > 0) return;
-  if (view === 'first' && !touchy && !ui.dialogOpen && !ui.panelOpen) {
-    canvas.requestPointerLock?.();
+  if (view === 'first' && !touchy && !lockBlocked && !ui.dialogOpen && !ui.panelOpen) {
+    tryLock();
     return;
   }
   click(e.clientX, e.clientY);
@@ -1103,40 +1159,76 @@ function pickAt(nx: number, ny: number): Inter | null {
   return null;
 }
 function clickCenter() {
-  if (!player || ui.dialogOpen || ui.panelOpen || busy) return;
+  if (!player || ui.dialogOpen || ui.panelOpen || busy || closing || traveling) return;
   const it = pickAt(0, 0);
   if (it) goTo(it);
   else if (nearest) nearest.run();
 }
 function click(cx: number, cy: number) {
-  if (!world || !player || ui.dialogOpen || ui.panelOpen || busy) return;
+  if (!world || !player || ui.dialogOpen || ui.panelOpen || busy || closing || traveling) return;
   const r = canvas.getBoundingClientRect();
   const nx = ((cx - r.left) / r.width) * 2 - 1, ny = -((cy - r.top) / r.height) * 2 + 1;
   const it = pickAt(nx, ny);
   if (it) { goTo(it); return; }
   const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   const pt = new THREE.Vector3();
-  if (ray.ray.intersectPlane(plane, pt)) {
+  // what did the tap land on? Tapping a wall or roof means "go to that building":
+  // walk back along the tap toward the camera to the first spot you can reach.
+  let hit = false;
+  const solid = sceneryHit();
+  if (solid) {
+    const nav = world.nav;
+    const reach = nav.areaAt(nav.ci(player.x), nav.cj(player.z));
+    const d = ray.ray.direction;
+    const hl = Math.hypot(d.x, d.z) || 1;
+    for (let t = 0; t < 45; t += 0.25) {
+      const x = solid.point.x - (d.x / hl) * t, z = solid.point.z - (d.z / hl) * t;
+      const i = nav.ci(x), j = nav.cj(z);
+      if (nav.freeCell(i, j) && (!reach || nav.areaAt(i, j) === reach)) { pt.set(x, 0, z); hit = true; break; }
+    }
+  }
+  if (hit || ray.ray.intersectPlane(plane, pt)) {
     pending = null;
     const x = Math.max(BOUNDS.x0 + 0.5, Math.min(BOUNDS.x1 - 0.5, pt.x));
     const z = Math.max(BOUNDS.z0 + 0.5, Math.min(BOUNDS.z1 - 0.5, pt.z));
-    player.speed = Math.hypot(x - player.x, z - player.z) > 14 ? RUN : WALK;
-    player.walkTo(path(player.root.position, { x, z }));
-    marker(x, z);
+    const r = path(player.root.position, { x, z });
+    if (!r) { marker(x, z, true); return; }
+    // the route ends at the closest reachable spot (tap a building, you walk to its front)
+    const end = r[r.length - 1];
+    player.speed = Math.hypot(end.x - player.x, end.z - player.z) > 14 ? RUN : WALK;
+    player.walkTo(r);
+    marker(end.x, end.z);
   }
+}
+
+/** First visible piece of scenery under the pointer (not people, sky or snow). */
+function sceneryHit() {
+  if (!world) return null;
+  for (const h of ray.intersectObjects(world.scene.children, true)) {
+    const m = h.object as THREE.Mesh;
+    if ((m as unknown as THREE.Points).isPoints || m === markerMesh || m.material === world.skyMat) continue;
+    if ((m.material as THREE.Material | undefined)?.visible === false) continue;
+    let o: THREE.Object3D | null = m, ok = true;
+    while (o) { if (!o.visible || o.userData.person) { ok = false; break; } o = o.parent; }
+    if (!ok) continue;
+    if (h.point.y < 0.05) return null; // the ground itself: handled as a floor tap
+    return h;
+  }
+  return null;
 }
 
 let markerMesh: THREE.Mesh | null = null;
 let markerT = 0;
-function marker(x: number, z: number) {
+function marker(x: number, z: number, blocked = false) {
   if (!world) return;
   if (!markerMesh) markerMesh = new THREE.Mesh(new THREE.RingGeometry(0.22, 0.32, 24).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.8, depthWrite: false }));
+  (markerMesh.material as THREE.MeshBasicMaterial).color.set(blocked ? '#ff7466' : '#ffffff');
   world.scene.add(markerMesh);
   markerMesh.position.set(x, groundY(x, z) + 0.03, z);
   markerT = 0.8;
 }
 
-$('prompt').addEventListener('click', () => nearest?.run());
+$('prompt').addEventListener('click', () => { if (!closing && !traveling) nearest?.run(); });
 $('btnBooks').addEventListener('click', () => openBooks());
 $('btnMap').addEventListener('click', () => openMap());
 $('minimap').addEventListener('click', () => openMap());
@@ -1276,7 +1368,8 @@ function frame() {
       if (repathT <= 0 && Math.hypot(player.x - tp.x, player.z - tp.z) > pending.r * 0.85) {
         repathT = 0.6;
         player.speed = Math.hypot(player.x - tp.x, player.z - tp.z) > 4 ? RUN : WALK;
-        player.walkTo(path(player.root.position, { x: tp.x, z: tp.z }));
+        const r = path(player.root.position, { x: tp.x, z: tp.z });
+        if (r) player.walkTo(r); else { pending = null; player.stop(); }
       }
     }
     if (pending && Math.hypot(player.x - pending.x, player.z - pending.z) <= pending.r * 0.85) {
@@ -1458,7 +1551,7 @@ function renderSetup() {
   const check = () => { const ok = nameIn.value.trim().length > 0; startBtn.disabled = !ok; $('nameHint').hidden = ok; };
   check();
   nameIn.addEventListener('input', check);
-  nameIn.addEventListener('change', () => { sel.name = nameIn.value.trim(); persist(); buildWorld(sel.business, sel.location, sel.name); placePreviewOwner(); world!.setTime(0.3); world!.setSeason(3); for (let i = 0; i < 8; i++) spawnPed(true); });
+  nameIn.addEventListener('change', () => { sel.name = nameIn.value.trim(); persist(); world?.setShopName(shopNameFor(sel.business, sel.name)); });
   startBtn.addEventListener('click', () => {
     sel.name = nameIn.value.trim();
     if (!sel.name) { nameIn.focus(); return; }
@@ -1518,7 +1611,8 @@ async function boot(data: unknown) {
 
 window.claude?.hot?.snapshot?.(() => ({ state: mode === 'play' ? state : null }));
 if ((window as unknown as { __maxDt?: number }).__maxDt) {
-  (window as unknown as Record<string, unknown>).__bizsim = { player: () => player, state: () => state, world: () => world, cam, setView, travelTo, openMap, cars: () => cars, tod: (t: number | null) => { forceTod = t; } };
+  (window as unknown as Record<string, unknown>).__bizsimRenderer = renderer;
+  (window as unknown as Record<string, unknown>).__bizsim = { player: () => player, state: () => state, world: () => world, cam, camera, setView, travelTo, openMap, cars: () => cars, tod: (t: number | null) => { forceTod = t; } };
 }
 const hot = window.claude?.hot;
 if (hot?.ready) hot.ready((d) => boot(d)); else boot(hot?.data ?? null);

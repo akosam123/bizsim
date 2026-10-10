@@ -288,6 +288,9 @@ table.pl tr.total td { border-bottom: 0; border-top: 1px solid var(--muted); fon
 #fade.on { opacity: 1; pointer-events: auto; }
 #fade p { font-family: var(--f-display); font-size: 22px; font-weight: 700; color: var(--text); }
 #loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-family: var(--f-display); font-size: 18px; }
+#loading .fail { display: grid; gap: 10px; justify-items: center; text-align: center; max-width: 380px; padding: 0 16px; font-family: var(--f-body); font-size: 15px; color: var(--text); }
+#loading .fail b { font-family: var(--f-display); font-size: 20px; }
+#loading .fail span { color: var(--muted); line-height: 1.5; }
 
 @media (max-width: 640px) {
   #ledger > div { padding: 6px 9px; }

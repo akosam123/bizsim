@@ -11,6 +11,8 @@ export class NavGrid {
   readonly w: number;
   readonly h: number;
   readonly blocked: Uint8Array;
+  /** connected-area id per free cell (0 = blocked); filled by labelAreas() */
+  area: Int32Array | null = null;
 
   constructor(minX: number, minZ: number, maxX: number, maxZ: number, cell = 0.3) {
     this.cell = cell;
@@ -36,6 +38,35 @@ export class NavGrid {
     }
   }
 
+  /** Flood-fill the free cells into connected areas, so we never search for a
+   * route to somewhere you can't reach (behind buildings, inside a fence). */
+  labelAreas() {
+    const W = this.w, H = this.h;
+    const area = new Int32Array(W * H);
+    const stack = new Int32Array(W * H);
+    let id = 0;
+    for (let start = 0; start < W * H; start++) {
+      if (this.blocked[start] || area[start]) continue;
+      id++;
+      let top = 0;
+      stack[top++] = start;
+      area[start] = id;
+      while (top) {
+        const c = stack[--top];
+        const i = c % W, j = (c / W) | 0;
+        if (i > 0 && !this.blocked[c - 1] && !area[c - 1]) { area[c - 1] = id; stack[top++] = c - 1; }
+        if (i < W - 1 && !this.blocked[c + 1] && !area[c + 1]) { area[c + 1] = id; stack[top++] = c + 1; }
+        if (j > 0 && !this.blocked[c - W] && !area[c - W]) { area[c - W] = id; stack[top++] = c - W; }
+        if (j < H - 1 && !this.blocked[c + W] && !area[c + W]) { area[c + W] = id; stack[top++] = c + W; }
+      }
+    }
+    this.area = area;
+  }
+
+  areaAt(i: number, j: number) {
+    return this.area && i >= 0 && j >= 0 && i < this.w && j < this.h ? this.area[j * this.w + i] : 0;
+  }
+
   ci(x: number) { return Math.floor((x - this.minX) / this.cell); }
   cj(z: number) { return Math.floor((z - this.minZ) / this.cell); }
   wx(i: number) { return this.minX + (i + 0.5) * this.cell; }
@@ -46,17 +77,19 @@ export class NavGrid {
   }
   isFree(x: number, z: number) { return this.freeCell(this.ci(x), this.cj(z)); }
 
-  nearestFree(x: number, z: number): [number, number] | null {
+  /** Closest free cell; with `area`, only cells you can actually reach from there. */
+  nearestFree(x: number, z: number, area = 0): [number, number] | null {
     const i0 = this.ci(x), j0 = this.cj(z);
-    if (this.freeCell(i0, j0)) return [i0, j0];
-    for (let r = 1; r < 30; r++) {
+    const ok = (i: number, j: number) => this.freeCell(i, j) && (!area || this.areaAt(i, j) === area);
+    if (ok(i0, j0)) return [i0, j0];
+    for (let r = 1; r < 70; r++) {
       let best: [number, number] | null = null;
       let bestD = Infinity;
       for (let dj = -r; dj <= r; dj++) {
         for (let di = -r; di <= r; di++) {
           if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue;
           const i = i0 + di, j = j0 + dj;
-          if (!this.freeCell(i, j)) continue;
+          if (!ok(i, j)) continue;
           const d = di * di + dj * dj;
           if (d < bestD) { bestD = d; best = [i, j]; }
         }
@@ -80,12 +113,15 @@ export class NavGrid {
 
   findPath(sx: number, sz: number, tx: number, tz: number): P2[] | null {
     const s = this.nearestFree(sx, sz);
-    const t = this.nearestFree(tx, tz);
-    if (!s || !t) return null;
+    if (!s) return null;
+    // aim for the nearest point in the same connected area as the start
+    const reach = this.areaAt(s[0], s[1]);
+    const t = this.nearestFree(tx, tz, reach);
+    if (!t) return null;
     const W = this.w, N = this.w * this.h;
     const start = s[1] * W + s[0], goal = t[1] * W + t[0];
     const endX = this.wx(t[0]), endZ = this.wz(t[1]);
-    const exactEnd = this.isFree(tx, tz);
+    const exactEnd = this.isFree(tx, tz) && (!reach || this.areaAt(this.ci(tx), this.cj(tz)) === reach);
     if (start === goal) return [{ x: exactEnd ? tx : endX, z: exactEnd ? tz : endZ }];
 
     const g = new Float32Array(N).fill(Infinity);

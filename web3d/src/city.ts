@@ -649,7 +649,7 @@ export function buildCity(w: World) {
     }
     for (const [x, z] of [[11, 30], [28, 30], [28, 47], [11, 47]]) tree(w, x, z, 1.0, false);
     bench(w, 28.5, 38, -Math.PI / 2);
-    w.places.push({ id: 'court', name: 'The court', x: 28.8, z: 34, h: -Math.PI / 2 });
+    w.places.push({ id: 'court', name: 'The court', x: 29.4, z: 34, h: -Math.PI / 2 });
   }
   // south-east: Harbor Diner and its lot
   {
@@ -666,9 +666,6 @@ export function buildCity(w: World) {
     w.box(21, 1.0, 0.6, w.hedgeMat, 55.5, 0, 41.3);
     w.places.push({ id: 'diner', name: 'Harbor Diner', x: 52, z: 13.6, h: Math.PI });
   }
-  // houses on the south part of Oak, west side
-  for (let i = 0; i < 3; i++) building(w, { x: 29.5, z: 32 + i * 6, facing: 'E', width: 6, depth: 2.5, floors: 3, groundH: 3.4, wall: 'brick', color: houseColors[(i + 1) % houseColors.length], trim: '#e2d8c6', storefront: false, stoop: true, bays: 2 });
-  w.collider(26.9, 28.5, 31.05, 50);
   for (let i = 0; i < 3; i++) building(w, { x: 46.5, z: 46 + i * 6, facing: 'W', width: 6, depth: 9, floors: 3, groundH: 3.4, wall: 'brick', color: houseColors[(i + 4) % houseColors.length], trim: '#e9e3d6', storefront: false, stoop: true, bays: 2 });
 
   // far filler on both ends of Main

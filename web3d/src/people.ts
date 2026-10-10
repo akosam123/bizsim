@@ -203,6 +203,7 @@ export class Person {
     this.hit = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 1.85, 8), new THREE.MeshBasicMaterial({ visible: false }));
     this.hit.position.y = 0.92;
     this.hit.userData.person = this;
+    this.root.userData.person = this;
     this.root.add(this.hit);
 
     this.scale = opts.scale ?? look.height ?? 1;
