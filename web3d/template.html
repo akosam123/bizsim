@@ -154,7 +154,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--focus); out
 
 /* ---------- panels ---------- */
 #panel {
-  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  position: absolute; left: 50%; top: 50%; z-index: 6; transform: translate(-50%, -50%);
   width: min(760px, calc(100% - 32px)); max-height: calc(100% - 40px); overflow-y: auto;
   background: var(--ink); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 30px 80px rgba(0,0,0,0.5);
 }
@@ -237,15 +237,54 @@ table.pl tr.total td { border-bottom: 0; border-top: 1px solid var(--muted); fon
 .controls-note kbd, #help kbd { font-family: var(--f-mono); font-size: 11.5px; background: var(--ink-3); border-radius: 4px; padding: 1px 5px; color: var(--text); }
 
 /* ---------- end ---------- */
-#end { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(19,26,33,0.72); padding: 16px; }
+#end { position: absolute; inset: 0; z-index: 8; display: grid; place-items: center; background: rgba(19,26,33,0.72); padding: 16px; }
 #end .card { width: min(560px, 100%); background: var(--ink); border: 1px solid var(--line); border-radius: 16px; padding: 26px 22px; display: grid; gap: 14px; text-align: center; }
 #end .grade { font-family: var(--f-display); font-weight: 800; font-size: 120px; line-height: 0.9; color: var(--accent); }
 #end h2 { margin: 0; font-family: var(--f-display); font-size: 24px; }
 
-#help { position: absolute; right: 16px; top: calc(env(safe-area-inset-top, 0px) + 72px); width: 270px; max-width: calc(100% - 32px); padding: 12px 14px; font-size: 13px; line-height: 1.7; }
+#minimap { position: absolute; right: 16px; top: calc(env(safe-area-inset-top, 0px) + 64px); width: 168px; height: 168px; border-radius: 50%; border: 3px solid var(--glass); box-shadow: 0 6px 24px rgba(0,0,0,0.35); cursor: pointer; background: #d9d4c7; }
+#crosshair { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: rgba(255,255,255,0.9); box-shadow: 0 0 0 2px rgba(0,0,0,0.35); pointer-events: none; }
+#lockHint { position: absolute; left: 50%; top: 58%; transform: translateX(-50%); background: var(--glass); border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; font-size: 13px; pointer-events: none; }
+#lockHint kbd { font-family: var(--f-mono); font-size: 11.5px; background: var(--ink-3); border-radius: 4px; padding: 1px 5px; }
+#map { position: absolute; inset: 0; z-index: 6; background: rgba(11,15,19,0.6); display: grid; place-items: center; padding: 16px; }
+.map-card { width: min(1180px, 100%); max-height: 100%; overflow: auto; background: var(--ink); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 30px 80px rgba(0,0,0,0.5); }
+.map-card header { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 18px 10px; border-bottom: 1px solid var(--line); }
+.map-card h2 { margin: 0; font-family: var(--f-display); font-weight: 800; font-size: 22px; }
+.map-card .x { background: var(--ink-2); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; }
+.map-body { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 16px; padding: 14px 18px 18px; }
+.map-canvas { min-width: 0; overflow: auto; border-radius: 10px; }
+.map-canvas canvas { width: 100%; height: auto; display: block; cursor: pointer; border-radius: 10px; }
+.map-side { display: grid; gap: 10px; align-content: start; min-width: 0; }
+.legend { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 13.5px; }
+.legend li { display: flex; align-items: center; gap: 9px; }
+.lg { width: 16px; height: 16px; flex: none; display: grid; place-items: center; font: 800 11px system-ui; color: #1b1208; border-radius: 3px; }
+.lg.you { width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent; border-bottom: 14px solid #fff; border-radius: 0; }
+.lg.need { background: var(--alert); border-radius: 50%; }
+.lg.close { background: var(--accent); }
+.lg.place { background: #131a21; border: 3px solid #f1ede3; border-radius: 50%; width: 12px; height: 12px; }
+.lg.shop { background: var(--accent); }
+.lg.road { background: #3c434b; }
+.lg.bldg { background: #c9bfae; }
+.lg.park { background: #7aa05a; }
+.travel { display: grid; gap: 6px; max-height: 300px; overflow-y: auto; }
+.travel button { text-align: left; padding: 8px 12px; font-size: 14px; }
+.faces { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 8px; }
+.face { padding: 0; border-radius: 12px; overflow: hidden; border: 2px solid var(--line); background: var(--ink-2); aspect-ratio: 1; max-width: 100%; }
+.face img { width: 100%; height: 100%; display: block; object-fit: cover; }
+.face[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.tune { display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 8px 10px; align-items: center; margin-top: 4px; }
+.swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+.sw { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--ink); background: var(--c); box-shadow: 0 0 0 1px var(--line); padding: 0; }
+.sw[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--accent); }
+.chip { background: var(--ink-2); border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; font-size: 13px; }
+.chip[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.primary[disabled] { opacity: 0.45; cursor: not-allowed; filter: none; }
+#nameHint { margin-top: 2px; }
+#hud-right .hud-btn[aria-pressed="true"] { border-color: var(--accent); }
+#help { position: absolute; right: 16px; top: calc(env(safe-area-inset-top, 0px) + 72px); width: 300px; z-index: 2; max-width: calc(100% - 32px); padding: 12px 14px; font-size: 13px; line-height: 1.7; }
 #help b { font-family: var(--f-display); }
 
-#fade { position: absolute; inset: 0; background: #0b0f13; opacity: 0; pointer-events: none; transition: opacity .7s ease; display: grid; place-items: center; }
+#fade { position: absolute; inset: 0; z-index: 10; background: #0b0f13; opacity: 0; pointer-events: none; transition: opacity .7s ease; display: grid; place-items: center; }
 #fade.on { opacity: 1; pointer-events: auto; }
 #fade p { font-family: var(--f-display); font-size: 22px; font-weight: 700; color: var(--text); }
 #loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-family: var(--f-display); font-size: 18px; }
@@ -263,6 +302,14 @@ table.pl tr.total td { border-bottom: 0; border-top: 1px solid var(--muted); fon
   #dialog .line { font-size: 16px; }
   #dialog .title { order: -1; flex-basis: 100%; margin-left: 0; text-align: left; }
   #monthOf { display: none; }
+  .map-body { grid-template-columns: 1fr; }
+  .travel { max-height: none; grid-template-columns: 1fr 1fr; }
+  #btnMap, #btnView { padding: 8px 9px; }
+  #hud { flex-wrap: wrap; }
+  #ledger { flex: 1 1 100%; }
+  #hud-right { flex: 1 1 100%; justify-content: flex-end; }
+  #tasks { top: calc(env(safe-area-inset-top, 0px) + 112px); }
+  #help { top: calc(env(safe-area-inset-top, 0px) + 112px); }
   .meter { width: 44px; }
   #slate { top: auto; bottom: calc(env(safe-area-inset-bottom, 0px) + 84px); }
   #hud { gap: 6px; }
@@ -289,6 +336,8 @@ table.pl tr.total td { border-bottom: 0; border-top: 1px solid var(--muted); fon
       <div><span class="lbl">AP</span><span class="stat num" id="ap">0</span></div>
     </div>
     <div id="hud-right">
+      <button class="hud-card hud-btn" id="btnMap" type="button">Map</button>
+      <button class="hud-card hud-btn" id="btnView" type="button" aria-pressed="false">1st person</button>
       <button class="hud-card hud-btn" id="btnBooks" type="button">Books</button>
       <button class="hud-card hud-btn" id="btnHelp" type="button" aria-expanded="false">?</button>
     </div>
@@ -299,15 +348,19 @@ table.pl tr.total td { border-bottom: 0; border-top: 1px solid var(--muted); fon
     <ol id="taskList"></ol>
   </aside>
 
+  <canvas id="minimap" width="168" height="168" hidden aria-label="Minimap. Click to open the full map."></canvas>
   <div id="help" class="hud-card" hidden>
     <b>Getting around</b><br>
-    <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or tap the ground to walk<br>
+    <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or tap the ground to walk · hold <kbd>Shift</kbd> to run<br>
     Drag to turn the camera · scroll or pinch to zoom<br>
+    <kbd>M</kbd> map: jump to any place · <kbd>V</kbd> first person<br>
     <kbd>E</kbd> or tap the prompt to talk and use things<br>
     <kbd>1</kbd>–<kbd>3</kbd> pick a choice · <kbd>B</kbd> books<br>
     People with an orange <b>!</b> need a decision. When they're handled, see Priya in the office to close the month.
-    <div style="margin-top:8px"><button class="secondary" type="button" id="btnTitle">Save and go to title</button></div>
+    <div class="go-row" style="margin-top:8px"><button class="secondary" type="button" id="btnGfx">Graphics: High</button><button class="secondary" type="button" id="btnTitle">Save and go to title</button></div>
   </div>
+  <div id="crosshair" hidden aria-hidden="true"></div>
+  <div id="lockHint" hidden>Click to look around · <kbd>Esc</kbd> frees the mouse</div>
 
   <button id="prompt" type="button" hidden></button>
   <div id="toasts" aria-live="polite"></div>
@@ -315,6 +368,7 @@ table.pl tr.total td { border-bottom: 0; border-top: 1px solid var(--muted); fon
 
   <section id="dialog" hidden aria-live="polite"></section>
   <section id="panel" hidden role="dialog" aria-modal="true"></section>
+  <section id="map" hidden></section>
 
   <section id="setup" hidden></section>
   <section id="end" hidden></section>

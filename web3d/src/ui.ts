@@ -1,7 +1,7 @@
 // DOM overlays: HUD, the month's to-do list, paper dialogue cards, panels.
 import type { GameState, MonthRecord, DecisionCard } from '../../src/game/types';
 import { BUSINESSES, LOCATIONS, MARKETING_TIERS, PRICE_LEVELS, LOAN_CAP, LOAN_STEP, LOAN_AP, ADS_AP, TIER_CAPACITY_MULT } from '../../src/game/config';
-import { CAST, OWNER_PRESETS } from '../../src/game/cast';
+import { CAST } from '../../src/game/cast';
 import { monthName, yearOf } from '../../src/game/narration';
 import { phaseDisplay } from '../../src/game/macro';
 import { STANCE_DESC } from '../../src/game/competitors';
@@ -362,9 +362,20 @@ export function endHtml(s: GameState, score: FinalScore) {
   </div>`;
 }
 
-export function setupHtml(sel: { business: string; location: string; preset: number; name: string }, hasSave: boolean) {
+interface LookLite { skin: string; hair: string; hairColor: string; clothes: string }
+const HAIR_NAMES: Record<string, string> = { short: 'Short', curly: 'Curly', bun: 'Bun', long: 'Long', cap: 'Cap', bald: 'Shaved', ponytail: 'Ponytail' };
+
+export function setupHtml(
+  sel: { business: string; location: string; look: LookLite; name: string },
+  hasSave: boolean,
+  portraits: string[],
+  presets: LookLite[],
+  pal: { skins: string[]; hairs: string[]; outfits: string[]; styles: string[] },
+) {
+  const same = (a: LookLite, b: LookLite) => a.skin === b.skin && a.hair === b.hair && a.hairColor === b.hairColor && a.clothes === b.clothes;
+  const sw = (attr: string, colors: string[], cur: string, label: string) => `<div class="swatches" role="group" aria-label="${label}">${colors.map((c) => `<button type="button" class="sw" data-${attr}="${c}" style="--c:${c}" aria-pressed="${c === cur}" aria-label="${label} ${c}"></button>`).join('')}</div>`;
   return `<div class="inner">
-    <div class="brand"><h1>Biz<em>Sim</em><br>3D</h1><p>Open a shop on a real block. Walk the floor, talk to the people who need you, and survive 24 months.</p></div>
+    <div class="brand"><h1>Biz<em>Sim</em><br>3D</h1><p>Open a shop on a real block. Walk the neighbourhood, talk to the people who need you, and survive 24 months.</p></div>
     ${hasSave ? `<div class="go-row"><button class="primary" type="button" id="continueRun">Continue your run</button><span class="note">or start a new one below</span></div>` : ''}
     <div class="step"><span class="lbl">1 · What are you opening?</span><div class="opts-grid">
       ${BUSINESSES.map((b) => `<button class="tile" type="button" data-biz="${b.id}" aria-pressed="${sel.business === b.id}"><b>${b.name}</b><small>${esc(b.tagline)}</small><span class="num">~$${b.baseTicket.toFixed(2)} ticket</span></button>`).join('')}
@@ -372,11 +383,59 @@ export function setupHtml(sel: { business: string; location: string; preset: num
     <div class="step"><span class="lbl">2 · Where?</span><div class="opts-grid">
       ${LOCATIONS.map((l) => `<button class="tile" type="button" data-loc="${l.id}" aria-pressed="${sel.location === l.id}"><b>${l.name}</b><small>${esc(l.blurb)}</small><span class="num">${money(l.rent)}/mo · ${l.footTrafficPerDay}/day</span></button>`).join('')}
     </div></div>
-    <div class="step"><span class="lbl">3 · Who's the owner?</span><div class="owners">
-      ${OWNER_PRESETS.map((p, i) => `<button class="owner" type="button" data-preset="${i}" aria-pressed="${sel.preset === i}"><i style="background:${p.look.skin};--c:${p.look.clothes}"></i>${p.name}</button>`).join('')}
+    <div class="step"><span class="lbl">3 · How do you look?</span>
+      <div class="faces">${presets.map((p, i) => `<button type="button" class="face" data-preset="${i}" aria-pressed="${same(p, sel.look)}" aria-label="Look ${i + 1}">${portraits[i] ? `<img src="${portraits[i]}" alt="">` : ''}</button>`).join('')}</div>
+      <div class="tune">
+        <span class="lbl">Skin</span>${sw('skin', pal.skins, sel.look.skin, 'Skin tone')}
+        <span class="lbl">Hair</span><div class="pillrow">${pal.styles.map((h) => `<button type="button" class="chip" data-hair="${h}" aria-pressed="${sel.look.hair === h}">${HAIR_NAMES[h] ?? h}</button>`).join('')}</div>
+        <span class="lbl">Hair color</span>${sw('haircolor', pal.hairs, sel.look.hairColor, 'Hair color')}
+        <span class="lbl">Outfit</span>${sw('outfit', pal.outfits, sel.look.clothes, 'Outfit')}
+      </div>
     </div>
-    <label class="field"><span class="lbl">Your name on the sign</span><input id="ownerName" maxlength="16" value="${esc(sel.name)}" autocomplete="off"></label></div>
+    <div class="step"><label class="field"><span class="lbl">4 · Your name</span><input id="ownerName" maxlength="16" value="${esc(sel.name)}" autocomplete="off" placeholder="Type your name" aria-describedby="nameHint"></label>
+      <span class="note" id="nameHint">Pick a name. It goes on the sign over your door.</span></div>
     <div class="go-row"><button class="primary" type="button" id="startRun">Open the doors</button></div>
-    <p class="controls-note"><kbd>WASD</kbd> or tap to walk · drag to look around · <kbd>E</kbd> to talk. You start with $20,000 and 24 months.</p>
+    <p class="controls-note"><kbd>WASD</kbd> or tap to walk · <kbd>Shift</kbd> to run · drag to look · <kbd>E</kbd> to talk · <kbd>M</kbd> map · <kbd>V</kbd> first person. You start with $20,000 and 24 months.</p>
   </div>`;
+}
+
+// ---------------- the map ----------------
+export let mapOpen = false;
+export function openMap(places: { id: string; name: string }[], onTravel: (id: string) => void) {
+  const el = $('map');
+  el.innerHTML = `<div class="map-card" role="dialog" aria-modal="true" aria-label="Map">
+    <header><h2>The neighbourhood</h2><button class="x" type="button" id="mapX">Close</button></header>
+    <div class="map-body">
+      <div class="map-canvas"><canvas></canvas></div>
+      <aside class="map-side">
+        <h3 class="sec-h">Legend</h3>
+        <ul class="legend">
+          <li><span class="lg you"></span>You</li>
+          <li><span class="lg need">!</span>Needs a decision from you</li>
+          <li><span class="lg close">$</span>Priya · close the month</li>
+          <li><span class="lg place"></span>Place you can travel to</li>
+          <li><span class="lg shop"></span>Your shop</li>
+          <li><span class="lg road"></span>Street</li>
+          <li><span class="lg bldg"></span>Building</li>
+          <li><span class="lg park"></span>Park</li>
+        </ul>
+        <h3 class="sec-h">Travel to</h3>
+        <div class="travel">${places.map((p) => `<button type="button" class="secondary" data-go="${p.id}">${esc(p.name)}</button>`).join('')}</div>
+        <p class="note">Tap a place on the map or in the list to go straight there.</p>
+      </aside>
+    </div>
+  </div>`;
+  el.hidden = false;
+  mapOpen = true;
+  $('mapX').addEventListener('click', closeMap);
+  el.querySelectorAll<HTMLButtonElement>('[data-go]').forEach((b) => b.addEventListener('click', () => onTravel(b.dataset.go!)));
+  el.addEventListener('click', (e) => { if (e.target === el) closeMap(); });
+  return el;
+}
+export function closeMap() {
+  const el = $('map');
+  if (!el) return;
+  el.hidden = true;
+  el.innerHTML = '';
+  mapOpen = false;
 }

@@ -131,7 +131,7 @@ export class NavGrid {
     push(start);
     let found = false;
     let guard = 0;
-    while (heap.length && guard++ < 60000) {
+    while (heap.length && guard++ < 400000) {
       const cur = pop();
       if (cur === goal) { found = true; break; }
       if (closed[cur]) continue;
