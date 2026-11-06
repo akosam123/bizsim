@@ -1,6 +1,7 @@
+// LEGACY (Oct 10 source in web3d/src). The current game builds from web3d/live: npm run build:live.
 // Bundles the 3D front end + the shared game engine into one artifact page.
 // three.js loads from jsDelivr at a pinned version; everything else is inline.
-import { build } from '/opt/npm-tools/node_modules/esbuild/lib/main.js';
+import { build } from 'esbuild';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -40,8 +41,24 @@ const failSafe = `<script>
   setTimeout(function () { if (!window.__bizsimBooted) window.__bizsimFail(); }, 25000);
 })();
 </script>`;
-const page = readFileSync(join(here, 'template.html'), 'utf8') + `\n<script type="module">\n${js}\n</script>\n${failSafe}\n`;
-writeFileSync(join(here, 'dist/bizsim3d.html'), page);
+// The mentor button + panel is its own script, so it can never break the game itself.
+// MENTOR_URL (optional) is the server that holds the API key (see server/index.mjs).
+// Empty means "ask Claude directly", which only works on a published claude.ai page.
+const overlayBuild = await build({
+  entryPoints: [join(here, 'src/overlay.ts')],
+  bundle: true,
+  format: 'iife',
+  minify: process.argv.includes('--dev') ? false : true,
+  target: 'es2020',
+  write: false,
+  charset: 'utf8',
+  logLevel: 'warning',
+});
+const overlayJs = overlayBuild.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
+const overlay = `<script>\nwindow.BIZSIM_MENTOR_URL = ${JSON.stringify(process.env.MENTOR_URL || '')};\n${overlayJs}\n</script>`;
+// failSafe must stay directly after the module script (it looks at its previous sibling)
+const page = readFileSync(join(here, 'template.html'), 'utf8') + `\n${overlay}\n<script type="module">\n${js}\n</script>\n${failSafe}\n`;
+writeFileSync(join(here, 'dist/bizsim3d-oct10.html'), page);
 // local test wrapper (mimics the artifact skeleton)
-writeFileSync(join(here, 'dist/test.html'), `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>[hidden]{display:none!important}body{margin:0;font:14px system-ui}</style></head><body>${page}</body></html>`);
+writeFileSync(join(here, 'dist/test-oct10.html'), `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>[hidden]{display:none!important}body{margin:0;font:14px system-ui}</style></head><body>${page}</body></html>`);
 console.log(`built ${(page.length / 1024).toFixed(0)} KB`);

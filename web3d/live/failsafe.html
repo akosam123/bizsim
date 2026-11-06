@@ -1,0 +1,18 @@
+<script>
+(function () {
+  var mod = document.currentScript && document.currentScript.previousElementSibling;
+  window.__bizsimFail = function (msg) {
+    var l = document.getElementById('loading');
+    if (!l || window.__bizsimFailed) return;
+    window.__bizsimFailed = true;
+    l.hidden = false;
+    l.innerHTML = '<div class="fail" role="alert"><b>The 3D game couldn’t start.</b><span>' + (msg || 'Part of it didn’t download. Check your connection and reload.') + '</span><button type="button" class="primary" id="failReload">Reload</button></div>';
+    var b = document.getElementById('failReload');
+    if (b) b.onclick = function () { location.reload(); };
+  };
+  if (mod) mod.addEventListener('error', function () { window.__bizsimFail(); });
+  setTimeout(function () { if (!window.__bizsimBooted) window.__bizsimFail(); }, 25000);
+})();
+</script>
+
+</body></html>

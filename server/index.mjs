@@ -24,6 +24,57 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const DB_PATH = join(HERE, 'data.json');
 const PORT = Number(process.env.PORT || 8787);
 
+/* ---------------------------------------------------------------- mentor -- */
+// The AI mentor: POST /mentor { mode, snapshot, question? } -> { message, recommendations? }.
+// Needs ANTHROPIC_API_KEY in the environment (put it in .env, which git ignores).
+// The prompts and validation live in src/game/mentorCore.ts, shared with the game.
+// Node 22.18+ runs that .ts file directly; if it can't load, only the mentor is switched off.
+let mentorCore = null;
+try { mentorCore = await import('../src/game/mentorCore.ts'); }
+catch (e) { console.warn('[mentor] disabled, could not load src/game/mentorCore.ts:', e.message); }
+
+const MENTOR_MODEL = process.env.MENTOR_MODEL || 'claude-sonnet-5-5';
+const ANTHROPIC_URL = (process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com') + '/v1/messages';
+const RATE_LIMIT_PER_MIN = 30;
+const mentorHits = new Map();
+/** A tiny in-memory limit so one player (or a bug) cannot burn the API budget. */
+function limited(ip) {
+  const now = Date.now();
+  const h = mentorHits.get(ip);
+  if (!h || now > h.reset) { mentorHits.set(ip, { n: 1, reset: now + 60_000 }); return false; }
+  h.n += 1;
+  return h.n > RATE_LIMIT_PER_MIN;
+}
+
+async function runMentor(req) {
+  const system = mentorCore.buildSystem(req.mode);
+  const user = mentorCore.buildUser(req);
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    let text = '';
+    try {
+      const r = await fetch(ANTHROPIC_URL, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': process.env.ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({ model: MENTOR_MODEL, max_tokens: 600, system, messages: [{ role: 'user', content: user }] }),
+        signal: AbortSignal.timeout(20000),
+      });
+      if (!r.ok) { console.error(`[mentor] attempt ${attempt}: the API answered ${r.status}`); continue; }
+      const data = await r.json();
+      text = (data.content || []).find((b) => b.type === 'text')?.text ?? '';
+      const reply = mentorCore.validateReply(mentorCore.extractJson(text), req.mode);
+      if (reply) return reply;
+      console.error(`[mentor] attempt ${attempt}: reply failed validation. Raw output:`, text.slice(0, 400));
+    } catch (e) {
+      console.error(`[mentor] attempt ${attempt} failed:`, e.message);
+    }
+  }
+  return null;
+}
+
 const blank = { profiles: {}, runs: {}, days: [], codes: {}, sessions: {} };
 let db = existsSync(DB_PATH) ? JSON.parse(readFileSync(DB_PATH, 'utf8')) : { ...blank };
 for (const k of Object.keys(blank)) db[k] ??= blank[k];
@@ -210,6 +261,16 @@ const routes = {
     if (!p) return send(res, 401, { error: 'Not signed in.' });
     return send(res, 200, leaderboard().find((r) => r.user_id === p.id) ?? null);
   },
+  /* -------------------------------------------------------------- mentor -- */
+  'POST /mentor': async (req, res, body) => {
+    if (!mentorCore) return send(res, 503, { error: 'The mentor is not available on this server.' });
+    if (!process.env.ANTHROPIC_API_KEY) return send(res, 503, { error: 'The mentor needs ANTHROPIC_API_KEY on the server.' });
+    if (limited(req.socket.remoteAddress || 'unknown')) return send(res, 429, { error: 'Slow down a little.' });
+    const v = mentorCore.validateRequest(body);
+    if (!v.ok) return send(res, 400, { error: v.error });
+    const reply = await runMentor(v.req);
+    return reply ? send(res, 200, reply) : send(res, 502, { error: 'The mentor could not answer.' });
+  },
 };
 
 createServer((req, res) => {
@@ -219,11 +280,14 @@ createServer((req, res) => {
   if (!handler) return send(res, 404, { error: `No route for ${req.method} ${path}` });
 
   let raw = '';
-  req.on('data', (c) => { raw += c; });
+  req.on('data', (c) => { raw += c; if (raw.length > 262144) req.destroy(); }); // no request is ever this big
   req.on('end', () => {
     let body = {};
     try { body = raw ? JSON.parse(raw) : {}; } catch { return send(res, 400, { error: 'Bad JSON.' }); }
-    try { handler(req, res, body); } catch (e) { send(res, 500, { error: String(e) }); }
+    try {
+      const out = handler(req, res, body);
+      if (out && typeof out.catch === 'function') out.catch((e) => send(res, 500, { error: String(e) }));
+    } catch (e) { send(res, 500, { error: String(e) }); }
   });
 }).listen(PORT, () => {
   console.log(`BizSim backend on http://localhost:${PORT}`);

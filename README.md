@@ -84,6 +84,33 @@ npx tsx scripts/balance-sim.ts
 
 Current state: the miser grades D or goes bankrupt everywhere; the plodder earns B/C and cannot survive downtown; the operator earns A/S. Profit comes from decisions, not from showing up.
 
+## AI mentor
+
+A **Mentor** button in the 3D game's top-right HUD opens a panel with three things: *What should I do?*,
+*Explain last month*, and a typed question. It sends Claude a small summary of the live game (cash, loan,
+reputation, morale, energy, last month's costs) plus the game's rules, and shows the answer.
+
+- **Code:** `src/game/mentorCore.ts` (rules, prompts, validation, shared by game and server),
+  `src/game/mentor.ts` (game-state summary + client), `web3d/src/overlay.ts` (button and panel),
+  `server/index.mjs` (`POST /mentor`, holds the API key).
+- **Safety:** the model must reply in JSON and every field is validated before it is shown; the player's
+  typed question is treated as untrusted text; any failure just means no answer, never a broken game.
+  The mentor's rules block (`RULES` in `mentorCore.ts`) is copied from the game's config, so update it when
+  balance changes.
+- **On a published claude.ai page** it asks Claude directly (the viewer allows it once). No server, no key.
+- **Anywhere else** it needs the server:
+  1. put `ANTHROPIC_API_KEY=...` in `.env` (git already ignores it)
+  2. `npm run server` (Node 22.18+; the server runs `mentorCore.ts` directly)
+  3. build the 3D page with `MENTOR_URL=http://localhost:8787 npm run build:3d`
+- `npm run test:mentor` runs the unit tests for the prompt/validation code.
+
+## 3D game source (`web3d/live`)
+
+The 3D game players see is the Oct 11 build, whose source was never committed. It was recovered from the
+published page into `web3d/live/` (readable `game.js`, `template.html`, `failsafe.html`); see
+`web3d/live/README.md`. Build it with `npm run build:live`. `web3d/src/` is the older Oct 10 source and is
+kept for reference; `archive/bizsim-3d-oct11.html` is the untouched published page, as a backup.
+
 ## Code map
 
 | Path | What |

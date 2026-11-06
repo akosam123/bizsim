@@ -20,6 +20,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "esbuild": "^0.28.2",
     "typescript": "~6.0.3"
   },
   "scripts": {
@@ -27,7 +28,10 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "server": "node server/index.mjs"
+    "server": "node --env-file-if-exists=.env --disable-warning=MODULE_TYPELESS_PACKAGE_JSON server/index.mjs",
+    "build:3d": "node web3d/build.mjs",
+    "build:live": "node web3d/build-live.mjs",
+    "test:mentor": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-mentor-core.mjs"
   },
   "private": true
 }

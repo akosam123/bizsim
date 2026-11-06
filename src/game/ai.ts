@@ -92,7 +92,7 @@ export async function generateAiCard(s: GameState, apiKey: string): Promise<Deci
   try {
     const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
     const response = await client.messages.parse({
-      model: 'claude-opus-5',
+      model: 'claude-opus-5-5',
       max_tokens: 4096,
       output_config: { format: zodOutputFormat(CardSchema), effort: 'medium' },
       system: SYSTEM,
@@ -145,7 +145,7 @@ export async function generateAiCard(s: GameState, apiKey: string): Promise<Deci
       }),
     };
     return card;
-  } catch {
+  } catch (e) { console.warn("[ai] scene failed, using the handcrafted deck:", e);
     // network, auth, parse — the handcrafted deck plays instead
     return null;
   }
