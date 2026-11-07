@@ -104,6 +104,29 @@ reputation, morale, energy, last month's costs) plus the game's rules, and shows
   3. build the 3D page with `MENTOR_URL=http://localhost:8787 npm run build:3d`
 - `npm run test:mentor` runs the unit tests for the prompt/validation code.
 
+### Public site (GitHub Pages) and hosting the mentor
+
+A static site like GitHub Pages has no way to reach Claude by itself. With no server address built in, the Mentor
+button is hidden and the tutorial skips its "Meet your mentor" step; everything else plays normally. The same build
+file works everywhere: inside claude.ai the mentor asks Claude directly, and with a server address built in it asks
+your server.
+
+To turn the mentor on for everyone, host `server/index.mjs` (this repo ships a `render.yaml` for Render):
+
+1. Create a NEW API key at console.anthropic.com just for this, and set a monthly spend limit on it.
+2. On render.com sign in with GitHub, then **New > Blueprint**, pick this repo and the `web3d-next` branch.
+   Render reads `render.yaml` and asks for `ANTHROPIC_API_KEY`: paste the key there (never in git). Apply.
+3. When it is live, open `https://<your-service>.onrender.com/health`. You should see `{"ok":true,"mentor":true}`.
+4. Rebuild the game with that address and publish it:
+   `MENTOR_URL=https://<your-service>.onrender.com npm run build:live`, copy `web3d/dist/bizsim3d.html`
+   to `docs/index.html`, commit and push.
+
+Settings (environment variables on the host): `ALLOWED_ORIGIN` locks CORS to your site's address,
+`MENTOR_DAILY_CAP` is the most answers per day across all players (default 500), `MENTOR_MODEL` is optional.
+
+The free plan puts an idle server to sleep. The game wakes it when the page opens, and the first answer after a
+long idle can still take up to a minute.
+
 ## 3D game source (`web3d/live`)
 
 The 3D game players see is the Oct 11 build, whose source was never committed. It was recovered from the

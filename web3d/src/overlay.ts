@@ -110,10 +110,13 @@ function build() {
     busy = true;
     controls.forEach((b) => (b.disabled = true));
     out.textContent = 'Thinking…';
+    // a free host puts an idle server to sleep; its first answer can take up to a minute
+    const slow = mentorUrl() ? setTimeout(() => { out.textContent = 'Waking the mentor up. The first answer can take up to a minute…'; }, 8000) : 0;
     try {
-      const r = await askMentor(mentorUrl(), { mode, question, snapshot: snapshotOf(s) });
-      out.textContent = r ? formatReply(r) : 'The mentor couldn’t answer. If a permission prompt appeared, tap again and allow it. Outside claude.ai it needs the mentor server running.';
+      const r = await askMentor(mentorUrl(), { mode, question, snapshot: snapshotOf(s) }, mentorUrl() ? 60000 : undefined);
+      out.textContent = r ? formatReply(r) : 'The mentor couldn’t answer. If a permission prompt appeared, tap again and allow it. If this isn’t claude.ai, the mentor server may be offline.';
     } finally {
+      clearTimeout(slow);
       busy = false;
       controls.forEach((b) => (b.disabled = false));
       status.uses++; // counts every real attempt, answered or not, so the tutorial can never get stuck
@@ -149,7 +152,19 @@ function build() {
   (document.getElementById('hud-right') ?? document.body).append(btn);
   // "Give me a second to think" in the game: open the mentor with that decision already asked
   status.askAbout = (question: string) => { openPanel(); input.value = question; void ask('ask', question); };
-  status.ready = true; // the game's tutorial skips its mentor step if this never becomes true
+  // The mentor is reachable inside claude.ai (the page can ask Claude) or when a server URL was built in.
+  // Anywhere else there is nothing to ask, so the button stays hidden and the tutorial skips its mentor step.
+  const claudeBridge = () => typeof (window as unknown as { claude?: { use?: unknown } }).claude?.use === 'function';
+  const onClaudeHost = () => /claude/i.test(location.hostname);
+  const available = () => !!mentorUrl() || claudeBridge() || onClaudeHost();
+  const refresh = () => { const ok = available(); status.ready = ok; btn.style.display = ok ? '' : 'none'; };
+  refresh();
+  // wake a sleeping server now, so the first real question is not the one that waits
+  if (mentorUrl()) void fetch(`${mentorUrl().replace(/\/$/, '')}/health`).catch(() => {});
+  // Claude's bridge can arrive a moment after the page: check again on load and for a few seconds
+  window.addEventListener('load', refresh);
+  let tries = 0;
+  const timer = setInterval(() => { refresh(); if (++tries >= 20 || available()) clearInterval(timer); }, 500);
 }
 
 try {

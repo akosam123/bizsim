@@ -36,6 +36,13 @@ catch (e) { console.warn('[mentor] disabled, could not load src/game/mentorCore.
 const MENTOR_MODEL = process.env.MENTOR_MODEL || 'claude-sonnet-5-5';
 const ANTHROPIC_URL = (process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com') + '/v1/messages';
 const RATE_LIMIT_PER_MIN = 30;
+const DAILY_CAP = Number(process.env.MENTOR_DAILY_CAP || 500);   // total mentor answers per day, across everyone
+let capDay = '', capCount = 0;
+function overDailyCap() {
+  const day = new Date().toISOString().slice(0, 10);
+  if (day !== capDay) { capDay = day; capCount = 0; }
+  return ++capCount > DAILY_CAP;
+}
 const mentorHits = new Map();
 /** A tiny in-memory limit so one player (or a bug) cannot burn the API budget. */
 function limited(ip) {
@@ -126,7 +133,7 @@ const send = (res, code, body) => {
   const payload = JSON.stringify(body ?? {});
   res.writeHead(code, {
     'content-type': 'application/json',
-    'access-control-allow-origin': '*',
+    'access-control-allow-origin': process.env.ALLOWED_ORIGIN || '*',   // set ALLOWED_ORIGIN to your site's address when hosting
     'access-control-allow-headers': 'content-type, authorization',
     'access-control-allow-methods': 'GET, POST, PATCH, OPTIONS',
   });
@@ -261,11 +268,13 @@ const routes = {
     if (!p) return send(res, 401, { error: 'Not signed in.' });
     return send(res, 200, leaderboard().find((r) => r.user_id === p.id) ?? null);
   },
+  'GET /health': (req, res) => send(res, 200, { ok: true, mentor: !!mentorCore && !!process.env.ANTHROPIC_API_KEY }),
   /* -------------------------------------------------------------- mentor -- */
   'POST /mentor': async (req, res, body) => {
     if (!mentorCore) return send(res, 503, { error: 'The mentor is not available on this server.' });
     if (!process.env.ANTHROPIC_API_KEY) return send(res, 503, { error: 'The mentor needs ANTHROPIC_API_KEY on the server.' });
     if (limited(req.socket.remoteAddress || 'unknown')) return send(res, 429, { error: 'Slow down a little.' });
+    if (overDailyCap()) return send(res, 429, { error: 'The mentor has reached its daily limit. Try again tomorrow.' });
     const v = mentorCore.validateRequest(body);
     if (!v.ok) return send(res, 400, { error: v.error });
     const reply = await runMentor(v.req);

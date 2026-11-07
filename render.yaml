@@ -1,0 +1,21 @@
+# Deploys the BizSim server (accounts, leaderboard and the AI mentor) on Render.
+# Render dashboard: New > Blueprint > pick this repo. It will ask you for ANTHROPIC_API_KEY.
+# Paste the key ONLY into Render's page, never into this file or into git.
+services:
+  - type: web
+    name: bizsim-mentor
+    runtime: node
+    plan: free
+    branch: web3d-next          # the branch Render deploys from
+    buildCommand: echo "nothing to build"
+    startCommand: node server/index.mjs
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION       # the server runs a .ts file directly, which needs Node 22.18 or newer
+        value: "24"
+      - key: ANTHROPIC_API_KEY  # you type this in on Render's page
+        sync: false
+      - key: ALLOWED_ORIGIN     # only your game's website may call the server
+        value: https://akosam123.github.io
+      - key: MENTOR_DAILY_CAP   # most mentor answers per day, across all players
+        value: "300"

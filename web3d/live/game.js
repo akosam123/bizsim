@@ -5987,9 +5987,11 @@ var FACADE = {
   }
   buildOffice() {
     let e = mat("#7a5638", 0.6), t = this.solid(2, 0.76, 0.85, e, 4.4, -10.6);
-    this.box(0.7, 0.45, 0.05, mat("#1f2328", 0.3), 4.4, 0.8, -10.35);
-    let o = this.box(0.62, 0.36, 0.02, new THREE6.MeshStandardMaterial({ color: "#203040", emissive: "#3d7bb0", emissiveIntensity: 0.6 }), 4.4, 0.86, -10.39);
-    o.rotation.y = Math.PI, this.box(0.5, 0.03, 0.18, "#2a2a2a", 4.4, 0.77, -10.75, this.scene, false), this.anchors.desk = { x: 4.4, z: -11.3, r: 1.3, mesh: t }, this.clickables.push(t), this.cyl(0.26, 0.26, 0.1, "#2c2c30", 4.4, 0.42, -11.55), this.box(0.5, 0.6, 0.08, mat("#2c2c30", 0.6), 4.4, 0.5, -11.85), this.cyl(0.24, 0.24, 0.08, mat("#3a6670", 0.8), 4.4, 0.42, -9.45), this.anchors.priya = { x: 4.4, z: -9.4, r: 1.3 }, this.solid(0.6, 1.3, 1.2, mat("#7c8a93", 0.5, 0.4), 6.6, -12.3), this.solid(0.4, 2, 2.2, e, 6.75, -9);
+    // The laptop sits at the right-hand end of the desk (x = 5), not in the middle, so it no longer hides Priya's face
+    // from the owner's chair (x = 4.4).
+    this.box(0.7, 0.45, 0.05, mat("#1f2328", 0.3), 5, 0.8, -10.35);
+    let o = this.box(0.62, 0.36, 0.02, new THREE6.MeshStandardMaterial({ color: "#203040", emissive: "#3d7bb0", emissiveIntensity: 0.6 }), 5, 0.86, -10.39);
+    o.rotation.y = Math.PI, this.box(0.5, 0.03, 0.18, "#2a2a2a", 5, 0.77, -10.75, this.scene, false), this.anchors.desk = { x: 4.4, z: -11.3, r: 1.3, mesh: t }, this.clickables.push(t), this.cyl(0.26, 0.26, 0.1, "#2c2c30", 4.4, 0.42, -11.55), this.box(0.5, 0.6, 0.08, mat("#2c2c30", 0.6), 4.4, 0.5, -11.85), this.cyl(0.24, 0.24, 0.08, mat("#3a6670", 0.8), 4.4, 0.42, -9.45), this.anchors.priya = { x: 4.4, z: -9.4, r: 1.3 }, this.solid(0.6, 1.3, 1.2, mat("#7c8a93", 0.5, 0.4), 6.6, -12.3), this.solid(0.4, 2, 2.2, e, 6.75, -9);
     for (let n = 0; n < 4; n++) for (let i = 0; i < 6; i++) this.box(0.25, 0.32, 0.1, ["#9b3d3d", "#3b5f8c", "#d1c4a8", "#3f7a5a"][(n + i) % 4], 6.65, 0.15 + n * 0.48, -9.9 + i * 0.33, this.scene, false);
     this.solid(0.6, 0.7, 0.6, mat("#3a3d42", 0.4, 0.7), 2.1, -12.4);
     let A = new THREE6.MeshStandardMaterial({ color: "#4f8a4a", roughness: 0.9, flatShading: true });
@@ -6203,7 +6205,7 @@ function openDialog(spec) {
     phase = "options", moreEl.textContent = touchy ? "" : "Press a number to choose", optsEl.hidden = false, optsEl.innerHTML = "", spec.options.forEach((o, i) => {
       let b = document.createElement("button");
       b.type = "button", b.className = "opt", b.disabled = !!o.disabled;
-      let cost = o.cost ? `<span class="cost neg">\u2212${money(o.cost).replace("$", "$")}</span>` : '<span class="cost zero">no cost</span>';
+      let cost = o.costText ? `<span class="cost ${o.costKind ?? "neg"}">${esc(o.costText)}</span>` : o.cost ? `<span class="cost neg">\u2212${money(o.cost).replace("$", "$")}</span>` : '<span class="cost zero">no cost</span>';
       b.innerHTML = `<span class="k">${i + 1}</span><span><b>${esc(o.label)}</b>${o.hint ? `<small>${esc(o.hint)}</small>` : ""}</span>${cost}`, b.addEventListener("click", () => pick2(i)), optsEl.appendChild(b);
     }), optsEl.querySelector("button:not([disabled])")?.focus({ preventScroll: true });
   }, pick2 = (i) => {
@@ -6237,6 +6239,15 @@ function openDialog(spec) {
   }
   type(spec.lines[0]), moreEl.textContent = spec.lines.length > 1 || spec.options?.length ? touchy ? "Tap to continue" : "Space to continue" : touchy ? "Tap to close" : "Space to close";
 }
+// What an option really costs, for the right-hand column of the decision box. The game used to show "no cost" for
+// options that charge through an action (renovation, team bonus, new product line), and put some prices in brackets
+// after the name. Now: the price is taken out of the name and shown on the right ("\u2212$600", "\u2212$800/mo", "+$1,800").
+function optionPrice(o) {
+  let m = /\s*\((\+)?\$([\d,]+)(\/mo)?\)\s*$/.exec(o.label);
+  if (m) return { label: o.label.slice(0, m.index), text: `${m[1] ? "+" : "\u2212"}$${m[2]}${m[3] ?? ""}`, kind: m[1] ? "pos" : "neg" };
+  if (o.cost) return o.cost < 0 ? { label: o.label, text: `+$${Math.round(-o.cost).toLocaleString("en-US")}`, kind: "pos" } : { label: o.label, text: `\u2212$${Math.round(o.cost).toLocaleString("en-US")}`, kind: "neg" };
+  return { label: o.label, text: null, kind: "zero" };
+}
 function cardDialogSpec(card, s) {
   let c2 = card.speaker === "narrator" ? null : CAST[card.speaker];
   return {
@@ -6245,7 +6256,10 @@ function cardDialogSpec(card, s) {
     color: c2?.look.clothes ?? "#888",
     title: card.title,
     lines: card.lines.length ? card.lines : ["\u2026"],
-    options: card.options.map((o) => ({ label: o.label, hint: o.hint, cost: o.cost }))
+    options: card.options.map((o) => {
+      let p = optionPrice(o);
+      return { label: p.label, hint: o.hint, cost: o.cost, costText: p.text, costKind: p.kind };
+    })
   };
 }
 var panelClose = null, panelOpen = false, panelLocked = false;
@@ -8434,6 +8448,8 @@ var Bt = [
     let baseline = null;
     return {
       id: "mentor",
+      // On a site with no way to reach Claude (no server, not inside claude.ai) the mentor is hidden, so skip this step.
+      skipIf: () => !(window.__bizsimMentor && window.__bizsimMentor.ready),
       title: () => "Meet your mentor",
       body: () => '<p>Stuck at any point? <b>Mentor</b> reads your numbers and tells you what to do next. Open it, ask <b>What should I do?</b>, then close it to continue. <button type="button" class="primary" data-mentor-open>Open the mentor</button></p>',
       done: () => {
@@ -8544,8 +8560,9 @@ function Tf(e) {
   Ff(e), Za.t -= e, Za.t <= 0 && (Za.t = 0.5, kf(), Cf(), Qf());
 }
 var Za = { t: 0 };
+// Starts the tutorial. Called once for every NEW run (not when resuming a saved one). Players can still skip it.
 function Sf() {
-  return If() ? false : (An(), true);
+  return An(), true;
 }
 window.addEventListener("keydown", (e) => {
   if (e.target?.tagName === "INPUT" || mode !== "play") return;
